@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>사내 길 안내 시스템</title>
+    
+    <!-- Leaflet.js (무료 지도 라이브러리) CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; background-color: #f4f6f8; }
+        #header { background-color: #2c3e50; color: white; text-align: center; padding: 15px; font-weight: bold; font-size: 18px; }
+        
+        /* 1. 목적지 선택 버튼 */
+        .dest-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 15px; }
+        .dest-btn { padding: 15px; background-color: white; border: 1px solid #dcdde1; border-radius: 8px; font-size: 14px; font-weight: bold; color: #2f3640; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .dest-btn.active { border: 2px solid #00a8ff; background-color: #e8f6ff; color: #00a8ff; }
+        
+        /* 2. 안전 수칙 경고창 */
+        .warning-box { margin: 0 15px 15px; padding: 15px; background-color: #fff9c4; border-left: 5px solid #f39c12; border-radius: 4px; font-size: 13px; color: #d35400; line-height: 1.5; font-weight: bold; }
+        
+        /* 3. GPS 정보창 */
+        .gps-info { margin: 0 15px 15px; padding: 15px; background-color: #2f3640; color: #f5f6fa; border-radius: 8px; font-size: 14px; line-height: 1.8; }
+        .gps-info span { font-weight: bold; color: #00eb8b; }
+        .gps-info .alert { color: #ff4757; }
+        
+        /* 4. 안내 사진 및 설명창 */
+        .guide-box { margin: 0 15px 15px; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .guide-title { padding: 10px 15px; background-color: #f5f6fa; font-weight: bold; font-size: 15px; border-bottom: 1px solid #eee; }
+        .guide-image { width: 100%; height: 220px; background-color: #e1e2e6; object-fit: cover; display: block; }
+        .guide-desc { padding: 15px; font-size: 14px; color: #353b48; line-height: 1.4; }
+        
+        /* 5. Leaflet 지도 영역 */
+        #map { width: 100%; height: 350px; border-top: 2px solid #dcdde1; }
+    </style>
+</head>
+<body>
+
+    <div id="header">🚚 사내 길 안내 시스템</div>
+
+    <!-- 1. 목적지 선택 -->
+    <div class="dest-container">
+        <button class="dest-btn" onclick="selectDestination('LLDPE')">LLDPE 창고</button>
+        <button class="dest-btn" onclick="selectDestination('HDPE')">HDPE 창고</button>
+        <button class="dest-btn" onclick="selectDestination('PVC')">PVC 창고</button>
+        <button class="dest-btn" onclick="selectDestination('EVA')">EVA 창고</button>
+        <button class="dest-btn" onclick="selectDestination('ABS')">ABS 창고</button>
+        <button class="dest-btn" onclick="selectDestination('PS')">PS 창고</button>
+        <button class="dest-btn" onclick="selectDestination('설비자재')">설비자재 창고</button>
+        <button class="dest-btn" onclick="selectDestination('원부자재')">원부자재 창고</button>
+    </div>
+
+    <!-- 2. 안전 수칙 -->
+    <div class="warning-box">
+        ⚠️ 단지 내 운행 안전 수칙<br>
+        - 전 구간 규정 속도: <b>시속 20km 이하</b> 준수<br>
+        - 교차로 및 횡단보도 앞에서는 무조건 일시 정지 바랍니다.
+    </div>
+
+    <!-- 3. GPS 상태 -->
+    <div class="gps-info">
+        📍 내비게이션 상태: <span id="gps-status">목적지를 선택해주세요...</span><br>
+        🚗 현재 주행 속도: <span id="current-speed">0</span> km/h <span id="speed-alert"></span><br>
+        🎯 남은 거리: <span id="remain-dist">-</span> m
+    </div>
+
+    <!-- 4. 교차로 안내 (50m 이내 진입 시 자동 변경) -->
+    <div class="guide-box">
+        <div class="guide-title" id="guide-title">👉 다음 이동 지침</div>
+        <img id="guide-img" class="guide-image" src="https://via.placeholder.com/600x300?text=목적지+선택+대기중" alt="안내 이미지">
+        <div class="guide-desc" id="guide-desc">목적지를 선택하고 이동을 시작하면, 해당 갈림길 진입 시 안내 사진과 지침이 표시됩니다.</div>
+    </div>
+
+    <!-- 5. 지도 영역 -->
+    <div id="map"></div>
+
+    <!-- Leaflet.js (무료 지도 라이브러리) Script -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map, userMarker, routeLine;
+        let currentTargetRoute = null;
+        let watchId = null;
+
+        // ==========================================
+        // [수정 영역 1] 구글 지도로 수집한 경로 데이터 (위도, 경도 순서)
+        // ==========================================
+        const routes = {
+            'PVC': [
+                [36.9871, 126.3451], // 1번 핀 (정문)
+                [36.9878, 126.3458], // 2번 핀 (갈림길 1)
+                [36.9885, 126.3465]  // 3번 핀 (PVC 창고 도착)
+            ],
+            'LLDPE': [
+                [36.9871, 126.3451],
+                [36.9865, 126.3440]
+            ]
+            // 현장에서 데이터 받아오는 대로 계속 추가하면 됩니다.
+        };
+
+        // ==========================================
+        // [수정 영역 2] 50m 반경 진입 시 나타날 안내 현장 사진과 설명
+        // ==========================================
+        const checkpoints = [
+            {
+                lat: 36.9878, lng: 126.3458, // 구글 지도의 해당 교차로 핀 좌표
+                title: "1단계: 방재실 사거리", 
+                img: "pvc_turn1.jpg", // 공유받아 업로드한 현장 사진 파일명
+                desc: "방재실 사거리입니다. **오른쪽 건물(CU 편의점)을 끼고 우회전** 하세요."
+            }
+        ];
+
+        // --- 지도 초기화 ---
+        function initMap() {
+            // 기본 지도 시점 설정 (공장 중앙 위도, 경도)
+            map = L.map('map').setView([36.9871, 126.3451], 16);
+
+            // 오픈스트리트맵 타일 불러오기 (100% 무료)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+
+            // 사용자 현재 위치 파란색 마커
+            userMarker = L.circleMarker([36.9871, 126.3451], {
+                color: '#ffffff',
+                fillColor: '#00a8ff',
+                fillOpacity: 1,
+                radius: 9,
+                weight: 3
+            }).addTo(map);
+        }
+
+        // --- 목적지 선택 및 경로 표시 ---
+        function selectDestination(destName) {
+            document.querySelectorAll('.dest-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            if(!routes[destName]) {
+                alert(destName + ' 창고의 경로 데이터가 아직 등록되지 않았습니다.');
+                return;
+            }
+
+            currentTargetRoute = routes[destName];
+            document.getElementById('gps-status').innerText = `${destName} 창고 안내 중...`;
+
+            // 이전 경로 선 지우고 새 경로 선 그리기
+            if (routeLine) map.removeLayer(routeLine);
+            routeLine = L.polyline(currentTargetRoute, {color: '#00a8ff', weight: 6, opacity: 0.8}).addTo(map);
+            map.fitBounds(routeLine.getBounds()); // 경로가 다 보이도록 지도 축소/확대
+
+            startTracking();
+        }
+
+        // --- GPS 추적 ---
+        function startTracking() {
+            if (!navigator.geolocation) {
+                alert("스마트폰 GPS 기능을 켜주세요.");
+                return;
+            }
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+
+                    // 현재 위치 마커 이동
+                    userMarker.setLatLng([lat, lng]);
+                    map.panTo([lat, lng]);
+
+                    // 속도 계산 (km/h)
+                    let speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
+                    document.getElementById('current-speed').innerText = speed;
+                    document.getElementById('speed-alert').innerHTML = speed > 20 ? "<span class='alert'> (과속 주의!)</span>" : "";
+
+                    // 남은 거리 계산 (최종 목적지까지)
+                    const lastPoint = currentTargetRoute[currentTargetRoute.length - 1];
+                    const remainDist = map.distance([lat, lng], lastPoint);
+                    document.getElementById('remain-dist').innerText = Math.round(remainDist);
+
+                    // 50m 이내 교차로 안내 사진 전환
+                    checkCheckpoints(lat, lng);
+                },
+                (error) => { console.warn("GPS 오류: ", error.message); },
+                { enableHighAccuracy: true, maximumAge: 0 }
+            );
+        }
+
+        // --- 50m 반경 체크 함수 ---
+        function checkCheckpoints(lat, lng) {
+            for(let cp of checkpoints) {
+                let dist = map.distance([lat, lng], [cp.lat, cp.lng]);
+                if(dist <= 50) { // 50m 이내 접근 시
+                    document.getElementById('guide-title').innerText = cp.title;
+                    document.getElementById('guide-img').src = cp.img;
+                    document.getElementById('guide-desc').innerHTML = cp.desc;
+                    break;
+                }
+            }
+        }
+
+        // 페이지 로드 시 지도 실행
+        window.onload = initMap;
+    </script>
+</body>
+</html>
