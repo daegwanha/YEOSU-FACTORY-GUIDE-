@@ -28,7 +28,10 @@
         /* 4. 안내 사진 및 설명창 */
         .guide-box { margin: 0 10px 10px; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .guide-title { padding: 10px 12px; background-color: #f5f6fa; font-weight: bold; font-size: 14px; border-bottom: 1px solid #eee; }
-        .guide-image { width: 100%; height: 200px; background-color: #e1e2e6; object-fit: cover; display: block; }
+        
+        /* 💡 수정된 부분: 이미지 잘림 방지를 위해 height를 auto로, object-fit을 contain으로 변경 */
+        .guide-image { width: 100%; height: auto; max-height: 250px; background-color: #e1e2e6; object-fit: contain; display: block; }
+        
         .guide-desc { padding: 12px; font-size: 13px; color: #353b48; line-height: 1.4; }
         
         /* 지도 이동/확인 컨트롤 버튼 영역 */
