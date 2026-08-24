@@ -93,14 +93,14 @@
         🎯 남은 거리: <span id="remain-dist">-</span> m
     </div>
 
-    <!-- 4. 교차로 안내 (50m 이내 진입 시 자동 변경) -->
+    <!-- 4. 교차로 안내 -->
     <div class="guide-box">
         <div class="guide-title" id="guide-title">👉 다음 이동 지침</div>
         <img id="guide-img" class="guide-image" src="https://via.placeholder.com/600x300?text=목적지+선택+대기중" alt="안내 이미지">
         <div class="guide-desc" id="guide-desc">목적지를 선택하고 이동을 시작하면, 해당 갈림길 진입 시 안내 사진과 지침이 표시됩니다.</div>
     </div>
 
-    <!-- 지도 위치 제어 버튼 추가 -->
+    <!-- 지도 위치 제어 버튼 -->
     <div class="map-controls">
         <button class="map-ctrl-btn secondary" onclick="fitRouteBounds()">🛣️ 경로 전체 확인</button>
         <button class="map-ctrl-btn" onclick="moveToUserLocation()">⭐ 내 위치 확인</button>
@@ -109,7 +109,7 @@
     <!-- 5. 지도 영역 -->
     <div id="map"></div>
 
-    <!-- Leaflet.js (무료 지도 라이브러리) Script -->
+    <!-- Leaflet.js Script -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         let map, userMarker, routeLine;
@@ -215,7 +215,6 @@
                 attribution: '© OpenStreetMap'
             }).addTo(map);
 
-            // 별 모양 마커 아이콘 설정
             const starIcon = L.divIcon({
                 html: '<div class="star-marker-icon">⭐</div>',
                 className: '',
@@ -223,11 +222,10 @@
                 iconAnchor: [15, 15]
             });
 
-            // 사용자 마커를 별 모양으로 생성
             userMarker = L.marker(currentPos, { icon: starIcon }).addTo(map);
         }
 
-        // 목적지 선택 함수
+        // 목적지 선택 함수 (선택 시 즉시 첫번째 좌표 안내 이미지 표시 기능 추가)
         function selectDestination(element, destName) {
             document.querySelectorAll('.dest-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
@@ -243,13 +241,33 @@
             if (routeLine) map.removeLayer(routeLine);
             routeLine = L.polyline(currentTargetRoute, {color: '#00a8ff', weight: 6, opacity: 0.8}).addTo(map);
             
-            // 경로 전체가 보이도록 지도 화면 맞춤
             fitRouteBounds();
+
+            // 💡 추가된 부분: 목적지 클릭 시 첫번째 경로 좌표의 안내 사진/설명을 바로 출력합니다.
+            const startPoint = currentTargetRoute[0];
+            let firstGuideFound = false;
+
+            for (let pt of checkpoints) {
+                // 첫번째 좌표와 위치가 일치하는 체크포인트를 찾음
+                if (pt.lat === startPoint[0] && pt.lng === startPoint[1]) {
+                    document.getElementById('guide-title').innerText = "👉 " + pt.title;
+                    document.getElementById('guide-img').src = pt.img;
+                    document.getElementById('guide-desc').innerText = pt.desc;
+                    firstGuideFound = true;
+                    break;
+                }
+            }
+
+            // 혹시 첫 좌표가 체크포인트 배열에 없는 예외의 경우
+            if (!firstGuideFound) {
+                document.getElementById('guide-title').innerText = "👉 " + destName + " 경로 안내 시작";
+                document.getElementById('guide-img').src = "https://via.placeholder.com/600x300?text=" + encodeURIComponent(destName + " 안내 시작");
+                document.getElementById('guide-desc').innerText = "이동 경로에 맞춰 진행해 주세요.";
+            }
 
             startTracking();
         }
 
-        // 기능 1: 전체 주행 노선이 화면 중심에 꽉 차도록 지도 이동
         function fitRouteBounds() {
             if (routeLine) {
                 map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
@@ -258,7 +276,6 @@
             }
         }
 
-        // 기능 2: 배율을 유지한 채 현재 위치(별 모양 마커)로 부드럽게 이동
         function moveToUserLocation() {
             if (currentPos) {
                 map.panTo(currentPos, { animate: true, duration: 1.0 });
