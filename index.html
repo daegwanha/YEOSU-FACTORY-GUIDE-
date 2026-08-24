@@ -31,6 +31,21 @@
         .guide-image { width: 100%; height: 200px; background-color: #e1e2e6; object-fit: cover; display: block; }
         .guide-desc { padding: 12px; font-size: 13px; color: #353b48; line-height: 1.4; }
         
+        /* 지도 이동/확인 컨트롤 버튼 영역 */
+        .map-controls { display: flex; gap: 8px; margin: 0 10px 8px; }
+        .map-ctrl-btn { flex: 1; padding: 10px; background-color: #00a8ff; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: 0.2s; }
+        .map-ctrl-btn:active { background-color: #0086cc; }
+        .map-ctrl-btn.secondary { background-color: #4b6584; }
+        .map-ctrl-btn.secondary:active { background-color: #354b60; }
+
+        /* 별 모양 마커 스타일 */
+        .star-marker-icon {
+            font-size: 26px;
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+            text-align: center;
+            line-height: 30px;
+        }
+
         /* 5. Leaflet 지도 영역 */
         #map { width: 100%; height: 320px; border-top: 2px solid #dcdde1; }
     </style>
@@ -85,6 +100,12 @@
         <div class="guide-desc" id="guide-desc">목적지를 선택하고 이동을 시작하면, 해당 갈림길 진입 시 안내 사진과 지침이 표시됩니다.</div>
     </div>
 
+    <!-- 지도 위치 제어 버튼 추가 -->
+    <div class="map-controls">
+        <button class="map-ctrl-btn secondary" onclick="fitRouteBounds()">🛣️ 경로 전체 확인</button>
+        <button class="map-ctrl-btn" onclick="moveToUserLocation()">⭐ 내 위치 확인</button>
+    </div>
+
     <!-- 5. 지도 영역 -->
     <div id="map"></div>
 
@@ -94,6 +115,7 @@
         let map, userMarker, routeLine;
         let currentTargetRoute = null;
         let watchId = null;
+        let currentPos = [34.85, 127.73]; // 현재 위치 저장 변수
 
         const routes = {
             'LLDPE자동': [[34.845723, 127.691575], [34.844639, 127.689963], [34.843304, 127.688512], [34.843732, 127.687705], [34.842738, 127.686160], [34.841537, 127.684717]],
@@ -186,23 +208,26 @@
         ];
 
         function initMap() {
-            map = L.map('map').setView([34.85, 127.73], 15);
+            map = L.map('map').setView(currentPos, 15);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '© OpenStreetMap'
             }).addTo(map);
 
-            userMarker = L.circleMarker([34.85, 127.73], {
-                color: '#ffffff',
-                fillColor: '#00a8ff',
-                fillOpacity: 1,
-                radius: 9,
-                weight: 3
-            }).addTo(map);
+            // 별 모양 마커 아이콘 설정
+            const starIcon = L.divIcon({
+                html: '<div class="star-marker-icon">⭐</div>',
+                className: '',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+
+            // 사용자 마커를 별 모양으로 생성
+            userMarker = L.marker(currentPos, { icon: starIcon }).addTo(map);
         }
 
-        // 목적지 선택 함수 (event.target 대신 this를 받도록 안전하게 수정)
+        // 목적지 선택 함수
         function selectDestination(element, destName) {
             document.querySelectorAll('.dest-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
@@ -217,9 +242,29 @@
 
             if (routeLine) map.removeLayer(routeLine);
             routeLine = L.polyline(currentTargetRoute, {color: '#00a8ff', weight: 6, opacity: 0.8}).addTo(map);
-            map.fitBounds(routeLine.getBounds());
+            
+            // 경로 전체가 보이도록 지도 화면 맞춤
+            fitRouteBounds();
 
             startTracking();
+        }
+
+        // 기능 1: 전체 주행 노선이 화면 중심에 꽉 차도록 지도 이동
+        function fitRouteBounds() {
+            if (routeLine) {
+                map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+            } else {
+                alert("목적지를 먼저 선택해주세요.");
+            }
+        }
+
+        // 기능 2: 배율을 유지한 채 현재 위치(별 모양 마커)로 부드럽게 이동
+        function moveToUserLocation() {
+            if (currentPos) {
+                map.panTo(currentPos, { animate: true, duration: 1.0 });
+            } else {
+                alert("현재 GPS 위치 정보를 불러오는 중입니다.");
+            }
         }
 
         function startTracking() {
@@ -233,17 +278,19 @@
                 (position) => {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
+                    currentPos = [lat, lng];
 
-                    userMarker.setLatLng([lat, lng]);
-                    map.panTo([lat, lng]);
+                    userMarker.setLatLng(currentPos);
 
                     let speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
                     document.getElementById('current-speed').innerText = speed;
                     document.getElementById('speed-alert').innerHTML = speed > 20 ? "<span class='alert'> (과속 주의!)</span>" : "";
 
-                    const lastPoint = currentTargetRoute[currentTargetRoute.length - 1];
-                    const remainDist = map.distance([lat, lng], lastPoint);
-                    document.getElementById('remain-dist').innerText = Math.round(remainDist);
+                    if (currentTargetRoute && currentTargetRoute.length > 0) {
+                        const lastPoint = currentTargetRoute[currentTargetRoute.length - 1];
+                        const remainDist = map.distance(currentPos, lastPoint);
+                        document.getElementById('remain-dist').innerText = Math.round(remainDist);
+                    }
 
                     checkCheckpoints(lat, lng);
                 },
