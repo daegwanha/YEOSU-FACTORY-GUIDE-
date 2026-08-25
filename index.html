@@ -29,7 +29,6 @@
         .guide-box { margin: 0 10px 10px; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .guide-title { padding: 10px 12px; background-color: #f5f6fa; font-weight: bold; font-size: 14px; border-bottom: 1px solid #eee; }
         
-        /* 💡 수정된 부분: 이미지 잘림 방지를 위해 height를 auto로, object-fit을 contain으로 변경 */
         .guide-image { width: 100%; height: auto; max-height: 250px; background-color: #e1e2e6; object-fit: contain; display: block; }
         
         .guide-desc { padding: 12px; font-size: 13px; color: #353b48; line-height: 1.4; }
@@ -47,6 +46,27 @@
             text-shadow: 0 0 5px rgba(0,0,0,0.5);
             text-align: center;
             line-height: 30px;
+        }
+
+        /* 💡 추가: 경로상 좌표 타이틀(라벨) 스타일 */
+        .route-label {
+            background-color: white;
+            border: 2px solid #e84118;
+            color: #e84118;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            white-space: nowrap;
+        }
+        /* Leaflet 툴팁의 기본 화살표(꼬리) 숨김 처리 */
+        .leaflet-tooltip.route-label::before {
+            display: none !important;
+        }
+        .leaflet-tooltip.route-label {
+            background: white;
+            border: 2px solid #e84118;
         }
 
         /* 5. Leaflet 지도 영역 */
@@ -116,6 +136,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         let map, userMarker, routeLine;
+        let routeMarkers = []; // 💡 추가: 생성된 핀 마커들을 관리할 배열
         let currentTargetRoute = null;
         let watchId = null;
         let currentPos = [34.85, 127.73]; // 현재 위치 저장 변수
@@ -228,7 +249,7 @@
             userMarker = L.marker(currentPos, { icon: starIcon }).addTo(map);
         }
 
-        // 목적지 선택 함수 (선택 시 즉시 첫번째 좌표 안내 이미지 표시 기능 추가)
+        // 목적지 선택 함수
         function selectDestination(element, destName) {
             document.querySelectorAll('.dest-btn').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
@@ -241,17 +262,44 @@
             currentTargetRoute = routes[destName];
             document.getElementById('gps-status').innerText = `${destName} 안내 중...`;
 
+            // 이전 경로 선 지우기
             if (routeLine) map.removeLayer(routeLine);
+            
+            // 💡 추가: 이전 목적지의 경로 핀 마커들 모두 지우기
+            routeMarkers.forEach(marker => map.removeLayer(marker));
+            routeMarkers = [];
+
+            // 새 경로 선 그리기
             routeLine = L.polyline(currentTargetRoute, {color: '#00a8ff', weight: 6, opacity: 0.8}).addTo(map);
             
+            // 💡 추가: 각 좌표마다 파란색 핀 마커 및 타이틀(라벨) 생성
+            currentTargetRoute.forEach(coord => {
+                // 해당 좌표와 일치하는 체크포인트 정보 찾기
+                const matchedPoint = checkpoints.find(pt => pt.lat === coord[0] && pt.lng === coord[1]);
+                
+                if (matchedPoint) {
+                    // Leaflet 기본 마커(파란색) 생성
+                    const marker = L.marker(coord).addTo(map);
+                    
+                    // 마커 옆에 사진과 유사한 영구 툴팁(말풍선) 추가
+                    marker.bindTooltip(matchedPoint.title, {
+                        permanent: true,       // 툴팁 항상 표시
+                        direction: 'right',    // 마커 우측에 표시
+                        offset: [12, 0],       // 마커와의 간격 조정
+                        className: 'route-label' // 새로 추가한 CSS 클래스 적용
+                    }).openTooltip();
+                    
+                    routeMarkers.push(marker); // 다음 선택시 지우기 위해 배열에 저장
+                }
+            });
+
             fitRouteBounds();
 
-            // 💡 추가된 부분: 목적지 클릭 시 첫번째 경로 좌표의 안내 사진/설명을 바로 출력합니다.
+            // 첫번째 경로 좌표의 안내 사진/설명을 바로 출력
             const startPoint = currentTargetRoute[0];
             let firstGuideFound = false;
 
             for (let pt of checkpoints) {
-                // 첫번째 좌표와 위치가 일치하는 체크포인트를 찾음
                 if (pt.lat === startPoint[0] && pt.lng === startPoint[1]) {
                     document.getElementById('guide-title').innerText = "👉 " + pt.title;
                     document.getElementById('guide-img').src = pt.img;
@@ -261,7 +309,6 @@
                 }
             }
 
-            // 혹시 첫 좌표가 체크포인트 배열에 없는 예외의 경우
             if (!firstGuideFound) {
                 document.getElementById('guide-title').innerText = "👉 " + destName + " 경로 안내 시작";
                 document.getElementById('guide-img').src = "https://via.placeholder.com/600x300?text=" + encodeURIComponent(destName + " 안내 시작");
@@ -273,7 +320,7 @@
 
         function fitRouteBounds() {
             if (routeLine) {
-                map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+                map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
             } else {
                 alert("목적지를 먼저 선택해주세요.");
             }
